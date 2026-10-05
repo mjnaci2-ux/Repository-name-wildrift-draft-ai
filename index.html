@@ -1,0 +1,80 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b1020"><link rel="manifest" href="manifest.json">
+<title>Wild Rift Draft AI</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080d1b;color:#f4f6ff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}
+header{padding:18px 16px 12px;background:#10182f;position:sticky;top:0;z-index:5;border-bottom:1px solid #24345f}
+h1{margin:0;font-size:23px}.sub{font-size:12px;opacity:.65;margin-top:4px}
+nav{display:flex;gap:7px;overflow:auto;padding:10px 0 2px}nav button{white-space:nowrap}
+main{max-width:900px;margin:auto;padding:14px 14px 40px}.tab{display:none}.tab.active{display:block}
+.card{background:#10182f;border:1px solid #26365f;border-radius:17px;padding:15px;margin-bottom:12px}
+h2{font-size:17px;margin:0 0 11px}.muted{opacity:.65;font-size:12px}
+button,input,select{font:inherit;color:#fff;background:#0c1430;border:1px solid #344777;border-radius:11px;padding:10px}
+button{cursor:pointer}.primary{background:#334d98;border-color:#6688ea}.danger{border-color:#74415b}
+.search{width:100%;margin-bottom:9px}.chips{display:flex;flex-wrap:wrap;gap:7px;max-height:210px;overflow:auto}.chip{padding:8px 10px;border-radius:999px;background:#192750;font-size:12px}.chip.sel{outline:2px solid #91adff}
+.team{display:flex;flex-wrap:wrap;gap:6px;min-height:34px;margin:7px 0}.pick{background:#263b72;border-radius:10px;padding:7px 9px;font-size:12px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:650px){.grid{grid-template-columns:1fr}}
+.score{font-size:31px;font-weight:800}.good{color:#9fe6b8}.bar{height:7px;background:#1c2748;border-radius:10px;overflow:hidden}.bar>i{display:block;height:100%;background:#86a5ff}
+.rank{padding:11px 0;border-bottom:1px solid #26345f}.rank:last-child{border:0}.why{font-size:12px;opacity:.75;margin-top:4px}
+label{font-size:12px;opacity:.75;display:block;margin:7px 0 5px}.row{display:flex;justify-content:space-between;gap:10px;border-bottom:1px solid #26345f;padding:9px 0;font-size:13px}
+</style></head><body>
+<header><h1>⚔️ Wild Rift Draft AI</h1><div class="sub">Phone-first Draft + Build assistant</div>
+<nav><button onclick="tab('draft')">⚔️ Draft</button><button onclick="tab('build')">🛒 Build</button><button onclick="tab('patch')">🔄 Patch</button></nav></header>
+<main>
+<section id="draft" class="tab active">
+<div class="card"><h2>Your Team</h2><div id="allyTeam" class="team"></div><input id="aq" class="search" placeholder="Search champion"><div id="allyChips" class="chips"></div></div>
+<div class="card"><h2>Enemy Team</h2><div id="enemyTeam" class="team"></div><input id="eq" class="search" placeholder="Search champion"><div id="enemyChips" class="chips"></div></div>
+<div class="card"><h2>🏆 Best Next Pick</h2><div id="recommend">Loading...</div></div>
+</section>
+<section id="build" class="tab">
+<div class="card"><h2>🛒 Build AI</h2><label>Champion</label><select id="buildChamp"></select><label>Enemy composition</label><div id="buildEnemy" class="team"></div><div id="buildResult"></div></div>
+</section>
+<section id="patch" class="tab">
+<div class="card"><h2>🔄 Patch Data</h2><div class="row"><b>Database</b><span>Wild Rift V1.3 prototype</span></div><div class="row"><b>Marksman system</b><span>7.3 data layer</span></div><div class="row"><b>Latest balance layer</b><span>7.3a data layer</span></div><p class="muted">Verified patch facts and model estimates are intentionally kept separate. Patch data should be refreshed before competitive recommendations.</p></div>
+</section>
+</main>
+<script>
+let champions={},allies=[],enemies=[];
+const $=x=>document.getElementById(x);
+fetch('data/champions.json').then(r=>r.json()).then(x=>{champions=x;init()});
+function init(){render(); fillBuild(); updateBuild()}
+function tab(id){document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));$(id).classList.add('active')}
+function names(){return Object.keys(champions).sort()}
+function selected(n){return allies.includes(n)||enemies.includes(n)}
+function toggle(arr,n){let i=arr.indexOf(n);if(i>=0)arr.splice(i,1);else if(arr.length<5&&!selected(n))arr.push(n);render()}
+function renderTeam(id,arr){$(id).innerHTML=arr.map(n=>`<span class="pick">${n} <button onclick="removePick('${id}', '${n.replaceAll("'","\\'")}')">×</button></span>`).join('')}
+function removePick(id,n){let a=id==='allyTeam'?allies:enemies;let i=a.indexOf(n);if(i>=0)a.splice(i,1);render()}
+function renderChips(id,q,arr){$(id).innerHTML=names().filter(n=>n.toLowerCase().includes(q.toLowerCase())).slice(0,100).map(n=>`<button class="chip ${arr.includes(n)?'sel':''}" onclick="toggle(${arr===allies?'allies':'enemies'},'${n.replaceAll("'","\\'")}')">${n}</button>`).join('')}
+function render(){renderTeam('allyTeam',allies);renderTeam('enemyTeam',enemies);renderChips('allyChips',$('aq').value,allies);renderChips('enemyChips',$('eq').value,enemies);recommend()}
+$('aq').oninput=render;$('eq').oninput=render;
+function tags(n){return new Set(champions[n]?.tags||[])}
+function score(n){
+ let t=tags(n),s=50,why=[];
+ if(t.has('scaling')){s+=9;why.push('strong scaling')} if(t.has('dps')){s+=7;why.push('sustained DPS')}
+ if(t.has('mobility')){s+=5;why.push('mobility')} if(t.has('self_peel')){s+=8;why.push('self-peel')}
+ enemies.forEach(e=>{let et=tags(e);
+   if(e==='Vi'&&(t.has('self_peel')||t.has('mobility'))){s+=7;why.push('better into Vi engage')}
+   if(e==='Shen'&&(t.has('dps')||t.has('crit'))){s+=4;why.push('can pressure frontline')}
+   if(e==='Sivir'&&(t.has('dps')||t.has('poke'))){s+=3}
+   if(e==='Zilean'&&(t.has('burst')||t.has('dive'))){s+=2}
+ });
+ allies.forEach(a=>{if(a===n)return;let at=tags(a);
+   if((a==='Janna'||a==='Lulu')&&t.has('scaling')){s+=6;why.push('excellent carry protection')}
+   if(a==='Orianna'&&(t.has('dps')||t.has('dive'))){s+=4;why.push('teamfight synergy')}
+   if(a==='Kindred'&&t.has('dps'))s+=3;
+ });
+ return [Math.min(99,s),[...new Set(why)].slice(0,3)]
+}
+function recommend(){
+ let cand=names().filter(n=>!selected(n)).map(n=>[n,...score(n)]).sort((a,b)=>b[1]-a[1]).slice(0,5);
+ if(!cand.length){$('recommend').textContent='Draft complete.';return}
+ let b=cand[0];$('recommend').innerHTML=`<div class="score">${b[0]} <span class="good">${b[1]}/100</span></div><p>${b[2].join(' • ')||'composition fit'}</p>${cand.map((x,i)=>`<div class="rank"><b>${i+1}. ${x[0]}</b> <span>${x[1]}/100</span><div class="bar"><i style="width:${x[1]}%"></i></div><div class="why">${x[2].join(' • ')||'general composition fit'}</div></div>`).join('')}`;
+}
+function fillBuild(){ $('buildChamp').innerHTML=names().map(n=>`<option>${n}</option>`).join('');$('buildChamp').onchange=updateBuild}
+function updateBuild(){
+ let n=$('buildChamp').value||'Yunara',t=tags(n);
+ let direction=t.has('marksman')||t.has('crit')?'Crit / DPS':t.has('mage')?'AP / ability power':t.has('tank')?'Defensive / engage':t.has('assassin')?'Burst / penetration':'Fighter / sustained damage';
+ $('buildResult').innerHTML=`<div class="row"><b>${n}</b><span>${[...t].join(', ')||'generalist'}</span></div><div class="row"><b>Build direction</b><span>${direction}</span></div><p class="muted">Full item/rune recommendations will use the verified patch database in the production engine.</p>`;
+}
+</script></body></html>
